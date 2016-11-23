@@ -35,7 +35,7 @@ primary_key = cluster.metadata.keyspaces[cass_keyspace].tables[cass_table].prima
 if primary_key:
     # read every key of the table
     query = 'SELECT id FROM ' + protect_name(cass_table)
-    statement = SimpleStatement(query, fetch_size=1000, consistency_level=ConsistencyLevel.QUORUM)
+    statement = SimpleStatement(query, fetch_size=1000, consistency_level=ConsistencyLevel.ONE)
     print 'Starting to repair table ' + cass_table
     repair_query = 'SELECT COUNT(1) FROM {} WHERE {} = ?'.format(protect_name(cass_table),
                                                                  protect_name(primary_key))
@@ -45,7 +45,7 @@ if primary_key:
     for user_row in session.execute(statement):
         # print user_row.id  # debug
         row_count += 1
-        session.execute(repair_statement, [user_row.id])
+        session.execute(repair_statement, [user_row[0])
         time.sleep(float(cass_throttle) / 1000000)  # delay in microseconds between reading each row
         if (row_count % 1000) == 0:
             print str(row_count) + ' rows processed'
