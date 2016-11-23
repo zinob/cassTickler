@@ -18,7 +18,8 @@ def getopts():
         cass_port = sys.argv[4]  # CQL Port
         cass_throttle = sys.argv[5]  # microseconds
 
-    guess_time=True
+        print_settings={ "guess_time":True,"print_interval": 1000}
+                
     else:
         logging.error("usage: tickler.py [Keyspace] [Table] [Cluster IP] [Port] [microseconds between each read]")
         sys.exit(1)
@@ -28,7 +29,7 @@ def getopts():
     logging.info("port "+ cass_port )
     logging.info("throttle "+ cass_throttle )
 
-    return {"keyspace": cass_keyspace, "table": cass_table, "ip": cass_ip, "port": cass_port, "throttle": cass_throttle, 'guess_time':true}
+    return {"keyspace": cass_keyspace, "table": cass_table, "ip": cass_ip, "port": cass_port, "throttle": cass_throttle, 'print_settings':print_settings}
 
 def connect(cass_keyspace,cass_ip="127.0.0.1", cass_port=9042):
     # Set the connections to the cluster
@@ -51,13 +52,27 @@ def prepare_repair_statement(cass_table, primary_key, session):
     repair_statement.consistency_level = ConsistencyLevel.ALL
     return repair_statement
 
-def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, print_interval = 1000, guess_time=false):
+def get_keycount(keyspace,table):
+    tablestats=subprocess.check_output(["nodetool", "cfstats",protect_name(keyspace) +"."+ protect_name(table)])
+    for i in tablestats.splitlines():
+        if "Number of keys (estimate)" in i:
+            return float(i.split(":")[1].strip())
+
+def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, print_settings):
     all_keys_statement = prepare_all_keys_statement(cass_table, primary_key)
     repair_statement = prepare_repair_statement(cass_table, primary_key, session)
     idle_time = float(throttle) / 1000000
+    print_interval=print_settings['print_interval']
+
+    if print_settings['guess_time']:
+        num_keys=get_keycount(cass_keyspace,cass_table)
+        ofkeys="/"+str(int(num_keys))
+    else:
+        num_keys=False
+        ofkeys=""
+    
     last = time.time()
     start_time = last
-    
     row_count = 0
     print 'Starting to repair table ' + cass_table
     try:
@@ -68,7 +83,13 @@ def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, pr
             time.sleep(idle_time)  # delay in microseconds between reading each row
             if (row_count % print_interval) == 0:
                 now = time.time()
-                print  '{} rows processed ({} lines in {:.2} seconds)'.format(str(row_count), print_interval, now-last)
+                print  '{}{} rows processed ({} lines in {:.2} seconds)'.format(str(row_count),ofkeys, print_interval, now-last)
+
+                if num_keys:
+                    elapsed=now-start_time
+                    speed=elapsed/row_count
+                    print "   {}s elapsed {}s remaining".format(elapsed,speed*(num_keys-row_count))
+                    
                 last=now
     except:
         logging.error("Failed after"+repr(user_row))
@@ -86,7 +107,9 @@ def main():
 
     logging.info("primary key: "+  str(primary_key) )
     if primary_key:
-        attempt_repair(primary_key, opts["keyspace"], opts["table"], session, opts["throttle"], opts['guess_time'])
+        attempt_repair(primary_key, opts["keyspace"], opts["table"], session, opts["throttle"], opts['print_settings'])
+    else:
+        logging.error("failed to get primary key for keyspace {} table {}".format(opts["keyspace"], opts["table"]))
 
 if __name__ == "__main__":
     main()
