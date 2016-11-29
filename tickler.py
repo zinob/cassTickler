@@ -1,35 +1,59 @@
+#!/bin/env python3
+
 import sys
 import time
 import logging
+import argparse
 import subprocess
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 from cassandra.metadata import protect_name
 from cassandra import ConsistencyLevel
 
-logging.basicConfig(level=logging.WARN)
+def set_loglevel(n):
+    levels=[
+        logging.WARN,
+        logging.INFO,
+        logging.DEBUG,
+        logging.NOTSET
+     ]
+    index=min(n or 0,len(levels))
+    logging.basicConfig(level=levels[index])
+
 # Get the arguments
 def getopts(): 
     #Should be replaced with a real argparse
-    if len(sys.argv) == 6:
-        cass_keyspace = sys.argv[1]  # Cassandra Keyspace containing the Table to tickle
-        cass_table = sys.argv[2]  # Cassandra Table to tickle
-        cass_ip = sys.argv[3]  # Cassandra Port
-        cass_port = sys.argv[4]  # CQL Port
-        cass_throttle = sys.argv[5]  # microseconds
+    parser = argparse.ArgumentParser(description='Read all rows in a key-space with consistency ALL in order to force read-repairs')
+    cassandra = parser.add_argument_group('cassandra', 'cassandra options')
+    cassandra.add_argument('-i','--ip', action='store', nargs='?',
+            default="127.0.0.1", help='hostname of a cassandra node')
+    cassandra.add_argument('-p','--port', action='store', nargs='?',
+            default="9042", help='cassandra port')
+    cassandra.add_argument('-t','--throttle', metavar="NS", action='store', nargs='?', type=int,
+            default=50, help='Wait this many nano-seconds between database-queries')
+    cassandra.add_argument('keyspace', action='store', help="Keyspace to be repaired")
+    cassandra.add_argument('table', type=str, help="Table to be repaired")
 
-        print_settings={ "guess_time":True,"print_interval": 1000}
-                
-    else:
-        logging.error("usage: tickler.py [Keyspace] [Table] [Cluster IP] [Port] [microseconds between each read]")
-        sys.exit(1)
-    logging.info("keyspace "+ cass_keyspace )
-    logging.info("table "+ cass_table )
-    logging.info("ip "+ cass_ip )
-    logging.info("port "+ cass_port )
-    logging.info("throttle "+ cass_throttle )
+    printing = parser.add_argument_group('print options')
+    printing.add_argument('-n','--status-interval', action='store', nargs='?',
+            type=int, default=1000, help='Print status information after every n requested row')
+    printing.add_argument('--guess-time', action='store_true',
+            help='Make a crude guess at the time when starting. Requires NodeTool locally. Probbably breaks horribly unless you are running cas-tickler from an actual node in the cluster (FIXME PLZ)')
 
-    return {"keyspace": cass_keyspace, "table": cass_table, "ip": cass_ip, "port": cass_port, "throttle": cass_throttle, 'print_settings':print_settings}
+    printing.add_argument('--verbose', '-v', action='count')
+
+    args = parser.parse_args()
+    
+    set_loglevel(args.verbose)
+    logging.info("keyspace "+ args.keyspace )
+    logging.info("table "+ args.table )
+    logging.info("ip "+ args.ip )
+    logging.info("port "+ args.port )
+    logging.info("throttle "+ str(args.throttle) )
+
+    print_settings={ "guess_time":True,"print_interval": 1000}
+
+    return {"keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, 'print_settings':print_settings}
 
 def connect(cass_keyspace,cass_ip="127.0.0.1", cass_port=9042):
     # Set the connections to the cluster
