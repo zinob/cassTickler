@@ -76,11 +76,42 @@ def prepare_repair_statement(cass_table, primary_key, session):
     repair_statement.consistency_level = ConsistencyLevel.ALL
     return repair_statement
 
+def get_network_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    s.connect(('<broadcast>', 0))
+    return s.getsockname()[0]
+
+
+def get_pct_ownership(keyspace):
+    my_ip=str(get_network_ip())
+    nodestats=subprocess.check_output(["nodetool", "status",protect_name(keyspace)])
+    for i in nodestats.splitlines():
+        if my_ip in i:
+            for j in i.split(" "):
+                if "%" in j:
+                    return float(j[:-1])/100
+    logging.warning("unable to calculate local ownership, assuming 100% ownership")
+    return 1
+
 def get_keycount(keyspace,table):
+    logging.info("calculating number of keys in table")
     tablestats=subprocess.check_output(["nodetool", "cfstats",protect_name(keyspace) +"."+ protect_name(table)])
+    ownership=get_pct_ownership(keyspace)
     for i in tablestats.splitlines():
         if "Number of keys (estimate)" in i:
-            return float(i.split(":")[1].strip())
+            own_keys=float(i.split(":")[1].strip())
+            break
+    logging.info("nodetool reports {} keys and an ownership of {:%}".format(own_keys,ownership))
+    return 1/ownership*own_keys
+
+
+def pretty_delta_seconds(seconds):
+    deltastr = str(timedelta(0,abs(seconds))).split(".")[0]
+    if seconds >= 0:
+        return deltastr
+    else:
+        return "-"+deltastr
 
 def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, print_settings):
     all_keys_statement = prepare_all_keys_statement(cass_table, primary_key)
@@ -107,18 +138,18 @@ def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, pr
             time.sleep(idle_time)  # delay in microseconds between reading each row
             if (row_count % print_interval) == 0:
                 now = time.time()
-                print  '{}{} rows processed ({} lines in {:.2} seconds)'.format(str(row_count),ofkeys, print_interval, now-last)
+                print  '{}{} rows processed ({} lines in {} seconds)'.format(str(row_count),ofkeys, print_interval, round(now-last,1))
 
                 if num_keys:
                     elapsed=now-start_time
                     speed=elapsed/row_count
-                    print "   {}s elapsed {}s remaining".format(elapsed,speed*(num_keys-row_count))
+                    print "   elapsed: {}, estimated total: {}".format(pretty_delta_seconds(elapsed),pretty_delta_seconds(speed*num_keys))
                     
                 last=now
     except:
         logging.error("Failed after"+repr(user_row))
         raise
-    print 'Repair of table ' + cass_table + ' {} seconds'.format(time.time() - start_time)
+    print 'Repair of table {} '.format(cass_table, pretty_delta_seconds(time.time() - start_time))
     print str(row_count) + ' rows read and repaired'
 
 def main():
