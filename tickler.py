@@ -2,9 +2,11 @@
 
 import sys
 import time
+import socket
 import logging
 import argparse
 import subprocess
+from datetime import timedelta
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 from cassandra.metadata import protect_name
