@@ -53,7 +53,7 @@ def getopts():
     logging.info("port "+ args.port )
     logging.info("throttle "+ str(args.throttle) )
 
-    print_settings={ "guess_time":True,"print_interval": 1000}
+    print_settings={ "guess_time":True,"print_interval": args.status_interval}
 
     return {"keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, 'print_settings':print_settings}
 
