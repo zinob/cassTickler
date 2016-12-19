@@ -35,6 +35,8 @@ def getopts():
             default=50, help='Wait this many nano-seconds between database-queries')
     cassandra.add_argument('keyspace', action='store', help="Keyspace to be repaired")
     cassandra.add_argument('table', type=str, help="Table to be repaired")
+    cassandra.add_argument('--keep-going', action='store_true',
+            help='Attempt to keep going even if a row fails to repair. If you have to use this you have _problems_')
 
     printing = parser.add_argument_group('print options')
     printing.add_argument('-n','--status-interval', action='store', nargs='?',
@@ -53,9 +55,10 @@ def getopts():
     logging.info("port "+ args.port )
     logging.info("throttle "+ str(args.throttle) )
 
-    print_settings={ "guess_time":args.guess_time,"print_interval": args.status_interval}
+    print_settings={ "guess_time":args.guess_time,"print_interval": args.status_interval }
+    cas_settings={ "keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, "keep_going": args.keep_going}
 
-    return {"keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, 'print_settings':print_settings}
+    return {"keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, 'cas_settings':cas_settings ,'print_settings':print_settings}
 
 def connect(cass_keyspace,cass_ip="127.0.0.1", cass_port=9042):
     # Set the connections to the cluster
@@ -115,7 +118,7 @@ def pretty_delta_seconds(seconds):
     else:
         return "-"+deltastr
 
-def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, print_settings):
+def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, cas_settings, print_settings):
     all_keys_statement = prepare_all_keys_statement(cass_table, primary_key)
     repair_statement = prepare_repair_statement(cass_table, primary_key, session)
     idle_time = float(throttle) / 1000000
@@ -148,8 +151,11 @@ def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, pr
                     print "   elapsed: {}, estimated total: {}".format(pretty_delta_seconds(elapsed),pretty_delta_seconds(speed*num_keys))
                     
                 last=now
-    except:
+    except cassandra.ReadTimeout as e:
         logging.error("Failed after"+repr(user_row))
+    if cas_settings['keep_going']:
+        print(e)
+    else:
         raise
     print 'Repair of table {} '.format(cass_table, pretty_delta_seconds(time.time() - start_time))
     print str(row_count) + ' rows read and repaired'
