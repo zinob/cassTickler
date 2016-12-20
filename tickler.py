@@ -17,7 +17,7 @@ try:
     from tqdm import tqdm
 except ImportError:
     print "This program looks better if you have TQDM installed (pip install tqdm)"
-    def tqdm(iterator,total,unit=""):
+    def tqdm(iterator,total,unit="",mininterval=.5):
         """THIS IS NOT TQDM, THIS IS AN UGLY SHIM"""
         if total:
             ofkeys = "/"+str(int(total))
@@ -136,8 +136,9 @@ def get_keycount(cas_settings):
         if "Number of keys (estimate)" in i:
             own_keys=float(i.split(":")[1].strip())
             break
-    logging.info("nodetool reports {} keys and an ownership of {:%}".format(own_keys,ownership))
-    return 1/ownership*own_keys
+    num_keys=1/ownership*own_keys
+    logging.info("nodetool reports {} keys and an ownership of {:%},giving a total of: {} keys".format(own_keys,ownership, num_keys))
+    return num_keys
 
 
 def pretty_delta_seconds(seconds):
@@ -161,8 +162,7 @@ def attempt_repair(primary_key, session, cas_settings, print_settings):
         num_keys=None
     
     print 'Starting to repair table ' + cass_table
-    print("TOTAL %s"%num_keys)
-    for user_row in tqdm(session.execute(all_keys_statement),total=num_keys,unit="keys"):
+    for user_row in tqdm(session.execute(all_keys_statement),total=num_keys,unit="keys",mininterval=.5):
         logging.debug("reading row: " + repr(user_row) ) 
         try:
             session.execute(repair_statement, [user_row[0]])
