@@ -16,16 +16,19 @@ from cassandra import ConsistencyLevel, ReadTimeout
 try:
     from tqdm import tqdm
 except ImportError:
-    def tqdm(iterator,total,title):
-        """THIS IS NOT TQDM, THIS IS AN UGLU SHIM"""
-        ofkeys="/"+str(int(total))
-
-        time.sleep(idle_time)  # delay in microseconds between reading each row
+    print "This program looks better if you have TQDM installed (pip install tqdm)"
+    def tqdm(iterator,total,unit=""):
+        """THIS IS NOT TQDM, THIS IS AN UGLY SHIM"""
+        if total:
+            ofkeys = "/"+str(int(total))
+        else:
+            ofkeys =""
+        print_interval = 10000
         last = time.time()
         start_time = last
 
         for row_count,i in enumerate(iterator):
-            if (row_count % print_interval) == 0:
+            if (row_count % print_interval) == 1:
                 now = time.time()
                 print  '{}{} rows processed ({} lines in {} seconds)'.format(str(row_count),ofkeys, print_interval, round(now-last,1))
                 if total:
@@ -63,8 +66,6 @@ def getopts():
             help='Attempt to keep going even if a row fails to repair. If you have to use this you have _problems_')
 
     printing = parser.add_argument_group('print options')
-    printing.add_argument('-n','--status-interval', action='store', nargs='?',
-            type=int, default=1000, help='Print status information after every n requested row')
     printing.add_argument('--guess-time', action='store_true',
             help='Make a crude guess at the time when starting. Requires NodeTool locally. Probbably breaks horribly unless you are running cas-tickler from an actual node in the cluster (FIXME PLZ)')
 
@@ -79,7 +80,7 @@ def getopts():
     logging.info("port "+ args.port )
     logging.info("throttle "+ str(args.throttle) )
 
-    print_settings={ "guess_time":args.guess_time,"print_interval": args.status_interval }
+    print_settings={ "guess_time":args.guess_time }
     cas_settings={ "keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, "keep_going": args.keep_going}
 
     return {"keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, 'cas_settings':cas_settings ,'print_settings':print_settings}
@@ -153,7 +154,6 @@ def attempt_repair(primary_key, session, cas_settings, print_settings):
     all_keys_statement = prepare_all_keys_statement(cass_table, primary_key)
     repair_statement = prepare_repair_statement(cass_table, primary_key, session)
     idle_time = float(cas_settings["throttle"]) / 1000000
-    print_interval=print_settings['print_interval']
 
     if print_settings['guess_time']:
         num_keys=get_keycount(cas_settings)
@@ -166,6 +166,7 @@ def attempt_repair(primary_key, session, cas_settings, print_settings):
         logging.debug("reading row: " + repr(user_row) ) 
         try:
             session.execute(repair_statement, [user_row[0]])
+            time.sleep(idle_time)  # delay in microseconds between reading each row
         except ReadTimeout as e:
             logging.error("Failed after"+repr(user_row))
             if cas_settings['keep_going']:
