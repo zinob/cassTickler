@@ -17,7 +17,7 @@ try:
     from tqdm import tqdm
 except ImportError:
     print "This program looks better if you have TQDM installed (pip install tqdm)"
-    def tqdm(iterator,total,unit=""):
+    def tqdm(iterator,total,unit="",desc="",ncols=0):
         """THIS IS NOT TQDM, THIS IS AN UGLY SHIM"""
         if total:
             ofkeys = "/"+str(int(total))
@@ -162,7 +162,7 @@ def attempt_repair(primary_key, session, cas_settings, print_settings):
     
     print 'Starting to repair table ' + cass_table
     print("TOTAL %s"%num_keys)
-    for user_row in tqdm(session.execute(all_keys_statement),total=num_keys,unit="keys"):
+    for user_row in tqdm(session.execute(all_keys_statement),total=num_keys,unit="keys", desc="%(table)s.%(table)s"%cas_settings ncols=80):
         logging.debug("reading row: " + repr(user_row) ) 
         try:
             session.execute(repair_statement, [user_row[0]])
