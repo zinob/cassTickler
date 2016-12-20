@@ -7,10 +7,34 @@ import logging
 import argparse
 import subprocess
 from datetime import timedelta
+
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 from cassandra.metadata import protect_name
-from cassandra import ConsistencyLevel
+from cassandra import ConsistencyLevel, ReadTimeout
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterator,total,title):
+        """THIS IS NOT TQDM, THIS IS AN UGLU SHIM"""
+        ofkeys="/"+str(int(total))
+
+        time.sleep(idle_time)  # delay in microseconds between reading each row
+        last = time.time()
+        start_time = last
+
+        for row_count,i in enumerate(iterator):
+            if (row_count % print_interval) == 0:
+                now = time.time()
+                print  '{}{} rows processed ({} lines in {} seconds)'.format(str(row_count),ofkeys, print_interval, round(now-last,1))
+                if total:
+                    elapsed=now-start_time
+                    speed=elapsed/row_count
+                    print "   elapsed: {}, estimated total: {}".format(pretty_delta_seconds(elapsed),pretty_delta_seconds(speed*total))
+                last=now
+            yield i
+
 
 def set_loglevel(n):
     levels=[
@@ -32,7 +56,7 @@ def getopts():
     cassandra.add_argument('-p','--port', action='store', nargs='?',
             default="9042", help='cassandra port')
     cassandra.add_argument('-t','--throttle', metavar="NS", action='store', nargs='?', type=int,
-            default=50, help='Wait this many nano-seconds between database-queries')
+            default=0, help='Wait this many nano-seconds between database-queries')
     cassandra.add_argument('keyspace', action='store', help="Keyspace to be repaired")
     cassandra.add_argument('table', type=str, help="Table to be repaired")
     cassandra.add_argument('--keep-going', action='store_true',
@@ -99,9 +123,13 @@ def get_pct_ownership(keyspace):
     logging.warning("unable to calculate local ownership, assuming 100% ownership")
     return 1
 
-def get_keycount(keyspace,table):
+def get_keycount(cas_settings):
+    keyspace = cas_settings['keyspace']
+    table = cas_settings['table']
     logging.info("calculating number of keys in table")
+
     tablestats=subprocess.check_output(["nodetool", "cfstats",protect_name(keyspace) +"."+ protect_name(table)])
+
     ownership=get_pct_ownership(keyspace)
     for i in tablestats.splitlines():
         if "Number of keys (estimate)" in i:
@@ -118,45 +146,32 @@ def pretty_delta_seconds(seconds):
     else:
         return "-"+deltastr
 
-def attempt_repair(primary_key, cass_keyspace, cass_table, session, throttle, cas_settings, print_settings):
+def attempt_repair(primary_key, session, cas_settings, print_settings):
+    cass_keyspace = cas_settings["keyspace"]
+    cass_table = cas_settings["table"]
+
     all_keys_statement = prepare_all_keys_statement(cass_table, primary_key)
     repair_statement = prepare_repair_statement(cass_table, primary_key, session)
-    idle_time = float(throttle) / 1000000
+    idle_time = float(cas_settings["throttle"]) / 1000000
     print_interval=print_settings['print_interval']
 
     if print_settings['guess_time']:
-        num_keys=get_keycount(cass_keyspace,cass_table)
-        ofkeys="/"+str(int(num_keys))
+        num_keys=get_keycount(cas_settings)
     else:
-        num_keys=False
-        ofkeys=""
+        num_keys=None
     
-    last = time.time()
-    start_time = last
-    row_count = 0
     print 'Starting to repair table ' + cass_table
-    try:
-        for user_row in session.execute(all_keys_statement):
-            logging.debug("reading row: " + repr(user_row) ) 
-            row_count += 1
+    print("TOTAL %s"%num_keys)
+    for user_row in tqdm(session.execute(all_keys_statement),total=num_keys,unit="keys"):
+        logging.debug("reading row: " + repr(user_row) ) 
+        try:
             session.execute(repair_statement, [user_row[0]])
-            time.sleep(idle_time)  # delay in microseconds between reading each row
-            if (row_count % print_interval) == 0:
-                now = time.time()
-                print  '{}{} rows processed ({} lines in {} seconds)'.format(str(row_count),ofkeys, print_interval, round(now-last,1))
-
-                if num_keys:
-                    elapsed=now-start_time
-                    speed=elapsed/row_count
-                    print "   elapsed: {}, estimated total: {}".format(pretty_delta_seconds(elapsed),pretty_delta_seconds(speed*num_keys))
-                    
-                last=now
-    except cassandra.ReadTimeout as e:
-        logging.error("Failed after"+repr(user_row))
-    if cas_settings['keep_going']:
-        print(e)
-    else:
-        raise
+        except ReadTimeout as e:
+            logging.error("Failed after"+repr(user_row))
+            if cas_settings['keep_going']:
+                print(e)
+            else:
+                raise
     print 'Repair of table {} '.format(cass_table, pretty_delta_seconds(time.time() - start_time))
     print str(row_count) + ' rows read and repaired'
 
@@ -170,7 +185,7 @@ def main():
 
     logging.info("primary key: "+  str(primary_key) )
     if primary_key:
-        attempt_repair(primary_key, opts["keyspace"], opts["table"], session, opts["throttle"], opts['print_settings'])
+        attempt_repair(primary_key, session, opts['cas_settings'], opts['print_settings'])
     else:
         logging.error("failed to get primary key for keyspace {} table {}".format(opts["keyspace"], opts["table"]))
 
