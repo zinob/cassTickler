@@ -1,5 +1,9 @@
 #!/bin/env python3
 
+# Originally developed by by Christos "ckalantzis" Kalantzis
+# Modified by Simon "zinob" Albinsson
+
+
 import sys
 import time
 import socket
