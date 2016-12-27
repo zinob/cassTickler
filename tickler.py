@@ -1,3 +1,4 @@
+#!/bin/env python
 import sys
 import time
 from cassandra.cluster import Cluster
@@ -35,7 +36,7 @@ primary_key = cluster.metadata.keyspaces[cass_keyspace].tables[cass_table].prima
 if primary_key:
     # read every key of the table
     query = 'SELECT {} FROM {}'.format(protect_name(primary_key),protect_name(cass_table)) 
-    statement = SimpleStatement(query, fetch_size=1000, consistency_level=ConsistencyLevel.ONE)
+    statement = SimpleStatement(query, fetch_size=1000, consistency_level=ConsistencyLevel.QUORUM)
     print 'Starting to repair table ' + cass_table
     repair_query = 'SELECT COUNT(1) FROM {} WHERE {} = ?'.format(protect_name(cass_table),
                                                                  protect_name(primary_key))
