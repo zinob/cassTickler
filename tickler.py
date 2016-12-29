@@ -58,7 +58,7 @@ def getopts():
     #Should be replaced with a real argparse
     parser = argparse.ArgumentParser(description='Read all rows in a key-space with consistency ALL in order to force read-repairs')
     cassandra = parser.add_argument_group('cassandra', 'cassandra options')
-    cassandra.add_argument('-i','--ip', action='store', nargs='?',
+    cassandra.add_argument('-i','--host', action='store', nargs='?',
             default="127.0.0.1", help='hostname of a cassandra node')
     cassandra.add_argument('-p','--port', action='store', default="9042",
             help='cassandra port')
@@ -81,14 +81,14 @@ def getopts():
     set_loglevel(args.verbose)
     logging.info("keyspace "+ args.keyspace )
     logging.info("table "+ args.table )
-    logging.info("ip "+ args.ip )
+    logging.info("host "+ args.host )
     logging.info("port "+ args.port )
     logging.info("throttle "+ str(args.throttle) )
 
     print_settings={ "guess_time":args.guess_time, "width":args.width }
-    cas_settings={ "keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, "keep_going": args.keep_going}
+    cas_settings={ "keyspace": args.keyspace, "table": args.table, "ip": args.host, "port": args.port, "throttle": args.throttle, "keep_going": args.keep_going}
 
-    return {"keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, 'cas_settings':cas_settings ,'print_settings':print_settings}
+    return {"keyspace": args.keyspace, "table": args.table, "ip": args.host, "port": args.port, "throttle": args.throttle, 'cas_settings':cas_settings ,'print_settings':print_settings}
 
 def connect(cass_keyspace,cass_ip="127.0.0.1", cass_port=9042):
     # Set the connections to the cluster
