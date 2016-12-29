@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python
 
 # Originally developed by by Christos "ckalantzis" Kalantzis
 # Modified by Simon "zinob" Albinsson
@@ -20,7 +20,7 @@ from cassandra import ConsistencyLevel, ReadTimeout
 try:
     from tqdm import tqdm
 except ImportError:
-    print "This program looks better if you have TQDM installed (pip install tqdm)"
+    print("This program looks better if you have TQDM installed (pip install tqdm)")
     def tqdm(iterator,total,unit="",desc="",ncols=0,mininterval=.5):
         """THIS IS NOT TQDM, THIS IS AN UGLY SHIM"""
         if total:
@@ -34,11 +34,11 @@ except ImportError:
         for row_count,i in enumerate(iterator):
             if (row_count % print_interval) == 1:
                 now = time.time()
-                print  '{}{} rows processed ({} lines in {} seconds)'.format(str(row_count),ofkeys, print_interval, round(now-last,1))
+                print('{}{} rows processed ({} lines in {} seconds)'.format(str(row_count),ofkeys, print_interval, round(now-last,1)))
                 if total:
                     elapsed=now-start_time
                     speed=elapsed/row_count
-                    print "   elapsed: {}, estimated total: {}".format(pretty_delta_seconds(elapsed),pretty_delta_seconds(speed*total))
+                    print("   elapsed: {}, estimated total: {}".format(pretty_delta_seconds(elapsed),pretty_delta_seconds(speed*total)))
                 last=now
             yield i
 
@@ -60,9 +60,9 @@ def getopts():
     cassandra = parser.add_argument_group('cassandra', 'cassandra options')
     cassandra.add_argument('-i','--ip', action='store', nargs='?',
             default="127.0.0.1", help='hostname of a cassandra node')
-    cassandra.add_argument('-p','--port', action='store', nargs='?',
-            default="9042", help='cassandra port')
-    cassandra.add_argument('-t','--throttle', metavar="NS", action='store', nargs='?', type=int,
+    cassandra.add_argument('-p','--port', action='store', default="9042",
+            help='cassandra port')
+    cassandra.add_argument('-t','--throttle', metavar="NS", action='store', type=int,
             default=0, help='Wait this many nano-seconds between database-queries')
     cassandra.add_argument('keyspace', action='store', help="Keyspace to be repaired")
     cassandra.add_argument('table', type=str, help="Table to be repaired")
@@ -71,9 +71,10 @@ def getopts():
 
     printing = parser.add_argument_group('print options')
     printing.add_argument('--guess-time', action='store_true',
-            help='Make a crude guess at the time when starting. Requires NodeTool locally. Probbably breaks horribly unless you are running cas-tickler from an actual node in the cluster (FIXME PLZ)')
+            help='Make a crude guess at the time when starting. Requires that thickler is run from a node and that nodetool is pressent')
 
     printing.add_argument('--verbose', '-v', action='count')
+    printing.add_argument('--width', type=int, metavar="COLUMNS", default=200, help="Sets the displaywidth when using-tqdm pretty-printing progress")
 
     args = parser.parse_args()
     
@@ -84,7 +85,7 @@ def getopts():
     logging.info("port "+ args.port )
     logging.info("throttle "+ str(args.throttle) )
 
-    print_settings={ "guess_time":args.guess_time }
+    print_settings={ "guess_time":args.guess_time, "width":args.width }
     cas_settings={ "keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, "keep_going": args.keep_going}
 
     return {"keyspace": args.keyspace, "table": args.table, "ip": args.ip, "port": args.port, "throttle": args.throttle, 'cas_settings':cas_settings ,'print_settings':print_settings}
@@ -164,8 +165,8 @@ def attempt_repair(primary_key, session, cas_settings, print_settings):
         num_keys=get_keycount(cas_settings)
     else:
         num_keys=None
-    
-    print 'Starting to repair table ' + cass_table
+    start_time = time.time()
+    print('Starting repair of table ' + cass_table)
     for user_row in tqdm(session.execute(all_keys_statement),total=num_keys,unit="keys", desc="%(table)s.%(table)s"%cas_settings, mininterval=.5, ncols=80):
         logging.debug("reading row: " + repr(user_row) ) 
         try:
@@ -177,8 +178,8 @@ def attempt_repair(primary_key, session, cas_settings, print_settings):
                 print(e)
             else:
                 raise
-    print 'Repair of table {} '.format(cass_table, pretty_delta_seconds(time.time() - start_time))
-    print str(row_count) + ' rows read and repaired'
+    print('Repair of table {} '.format(cass_table, pretty_delta_seconds(time.time() - start_time)))
+    print(str(row_count) + ' rows read and repaired')
 
 def main():
     opts=getopts()
